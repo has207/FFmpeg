@@ -2207,6 +2207,20 @@ static int xmaframes_decode_packet(AVCodecContext *avctx, AVFrame *frame,
 
     decode_frame(s, frame, got_frame_ptr);
 
+    /* Expose encoder delay (trim_start) and padding (trim_end) to the caller
+     * via AV_FRAME_DATA_SKIP_SAMPLES side data.  decode_frame() already parsed
+     * these from the bitstream and stored them in the context. */
+    if (*got_frame_ptr && (s->trim_start || s->trim_end)) {
+        AVFrameSideData *sd = av_frame_new_side_data(frame,
+            AV_FRAME_DATA_SKIP_SAMPLES, 10);
+        if (sd) {
+            AV_WL32(sd->data + 0, s->trim_start);
+            AV_WL32(sd->data + 4, s->trim_end);
+            sd->data[8] = 0;  /* reason for start skip: padding silence */
+            sd->data[9] = 0;  /* reason for end skip:   padding silence */
+        }
+    }
+
     return avpkt->size;
 }
 
