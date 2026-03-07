@@ -2139,7 +2139,13 @@ static av_cold int xmaframes_decode_init(AVCodecContext *avctx)
 
     avctx->block_align = 2048;
 
-    return decode_init(s, avctx, 0);
+    int ret = decode_init(s, avctx, 0);
+    if (ret == 0) {
+        /* Each packet contains a complete, individually decodable XMA frame,
+         * so there is no need to skip the first frame for IMDCT warmup. */
+        s->skip_frame = 0;
+    }
+    return ret;
 }
 
 static av_cold int xmaframes_decode_end(AVCodecContext *avctx)
