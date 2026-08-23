@@ -2211,7 +2211,17 @@ static int xmaframes_decode_packet(AVCodecContext *avctx, AVFrame *frame,
         return 0;
     }
 
+    /* Some XMA streams contain frames the decoder rejects (e.g.
+     * num_vec_coeffs out of range).  decode_frame() flags these through
+     * packet_loss with *got_frame_ptr = 0; propagate them as an error so
+     * callers can distinguish a corrupt frame from codec warmup, instead
+     * of reporting a fully consumed packet with no output. */
+    s->packet_loss = 0;
     decode_frame(s, frame, got_frame_ptr);
+    if (s->packet_loss && !*got_frame_ptr) {
+        s->packet_loss = 0;
+        return AVERROR_INVALIDDATA;
+    }
 
     /* Expose encoder delay (trim_start) and padding (trim_end) to the caller
      * via AV_FRAME_DATA_SKIP_SAMPLES side data.  decode_frame() already parsed
