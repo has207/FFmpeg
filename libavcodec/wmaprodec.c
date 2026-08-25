@@ -2148,6 +2148,21 @@ static av_cold int xmaframes_decode_init(AVCodecContext *avctx)
     return ret;
 }
 
+/**
+ * Unlike wmapro_flush(), this does not set skip_frame since each xmaframes
+ * packet is independently decodable and does not require IMDCT warmup.
+ */
+static av_cold void xmaframes_flush(AVCodecContext *avctx)
+{
+    WMAProDecodeCtx *s = avctx->priv_data;
+    int i;
+
+    for (i = 0; i < s->nb_channels; i++)
+        memset(s->channel[i].out, 0, s->samples_per_frame *
+               sizeof(*s->channel[i].out));
+    s->packet_loss = 1;
+}
+
 static av_cold int xmaframes_decode_end(AVCodecContext *avctx)
 {
     WMAProDecodeCtx *s = avctx->priv_data;
@@ -2202,6 +2217,14 @@ static int xmaframes_decode_packet(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR_INVALIDDATA;
     }
 
+    /* Each packet holds one complete, independently decodable frame, so no
+     * bitstream error can carry over between packets.  packet_loss is set by
+     * decode_init() and by xmaframes_flush(), and the only clear in the file
+     * lives in decode_packet(), which this decoder does not use -- without
+     * this reset the check after decode_frame() rejects every packet.  Reset
+     * before save_bits() so its own overflow signal is still caught. */
+    s->packet_loss = 0;
+
     save_bits(s, gb, xma_frame_len, 0);
 
     /* get output buffer */
@@ -2211,7 +2234,9 @@ static int xmaframes_decode_packet(AVCodecContext *avctx, AVFrame *frame,
         return 0;
     }
 
-    decode_frame(s, frame, got_frame_ptr);
+    ret = decode_frame(s, frame, got_frame_ptr);
+    if (s->packet_loss)
+        return AVERROR_INVALIDDATA;
 
     /* Expose encoder delay (trim_start) and padding (trim_end) to the caller
      * via AV_FRAME_DATA_SKIP_SAMPLES side data.  decode_frame() already parsed
@@ -2239,6 +2264,7 @@ const FFCodec ff_xmaframes_decoder = {
     .init           = xmaframes_decode_init,
     .close          = xmaframes_decode_end,
     FF_CODEC_DECODE_CB(xmaframes_decode_packet),
+    .flush          = xmaframes_flush,
     .p.capabilities = AV_CODEC_CAP_DR1,
     CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_FLTP),
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
