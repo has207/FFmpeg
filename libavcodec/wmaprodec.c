@@ -199,6 +199,7 @@ typedef struct WMAProDecodeCtx {
     uint8_t          dynamic_range_compression;     ///< frame contains DRC data
     uint8_t          bits_per_sample;               ///< integer audio sample size for the unscaled IMDCT output (used to scale to [-1.0, 1.0])
     uint16_t         samples_per_frame;             ///< number of samples to output
+    uint16_t         output_offset;                 ///< where in out[] a frame's samples start
     uint16_t         trim_start;                    ///< number of samples to skip at start
     uint16_t         trim_end;                      ///< number of samples to skip at end
     uint16_t         log2_frame_size;
@@ -1510,7 +1511,7 @@ static int decode_frame(WMAProDecodeCtx *s, AVFrame *frame, int *got_frame_ptr)
 
     /** copy samples to the output buffer */
     for (i = 0; i < s->nb_channels; i++)
-        memcpy(frame->extended_data[i], s->channel[i].out,
+        memcpy(frame->extended_data[i], s->channel[i].out + s->output_offset,
                s->samples_per_frame * sizeof(*s->channel[i].out));
 
     for (i = 0; i < s->nb_channels; i++) {
@@ -2144,6 +2145,12 @@ static av_cold int xmaframes_decode_init(AVCodecContext *avctx)
         /* Each packet contains a complete, individually decodable XMA frame,
          * so there is no need to skip the first frame for IMDCT warmup. */
         s->skip_frame = 0;
+        /* XMA frames use minimum-length subframes, which overlap the next
+         * frame by one subframe. Their samples are final up to half a
+         * subframe before the frame end. Output those instead of stopping
+         * half a frame before. */
+        s->output_offset = (s->samples_per_frame -
+                            s->min_samples_per_subframe) >> 1;
     }
     return ret;
 }
