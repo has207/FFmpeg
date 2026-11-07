@@ -1551,7 +1551,11 @@ static int decode_frame(WMAProDecodeCtx *s, AVFrame *frame, int *got_frame_ptr)
     }
 
     if (s->len_prefix) {
-        if (len != (get_bits_count(gb) - s->frame_offset) + 2) {
+        const int used = get_bits_count(gb) - s->frame_offset;
+        /** the XMA decoder plays a frame whose data ends before its length
+         *  and skips the rest */
+        if (s->avctx->codec_id == AV_CODEC_ID_XMAFRAMES ? used + 2 > len
+                                                        : used + 2 != len) {
             /** FIXME: not sure if this is always an error */
             av_log(s->avctx, AV_LOG_ERROR,
                    "frame[%"PRIu32"] would have to skip %i bits\n",
